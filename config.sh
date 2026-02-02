@@ -54,7 +54,7 @@ echo "Starting training with accelerate"
 accelerate launch \
     --num_processes=8 \
     --mixed_precision=bf16 \
-    sample_finetune_speech.py \
+    finetune_speech_adapters.py \
     --config ${CONFIG_FILE}
 
 echo "Training finished with exit code: $?"
