@@ -39,4 +39,4 @@ For ease of experimenting, the configs are created using a bash script as the en
 
 3. Ensure that `entity` in `wandb` field in the config.sh is set to your own entity. 
 
-4. This repository is a fork of (https://huggingface.co/microsoft/Phi-4-multimodal-instruct/tree/main), hence ensure that all the models / adapters are pulled correctly. Alternative, can just copy over `./config.sh`, `finetune_speech_adapters.py` and `sample_hf.py`
+4. This repository is a fork of (https://huggingface.co/microsoft/Phi-4-multimodal-instruct/tree/main), hence ensure that all the models / adapters are pulled correctly. Alternative, can just copy over `./config.sh`, `finetune_speech_adapters.py` and `sample_hf.py` to the Phi-4-multimodal-instruct repo 
