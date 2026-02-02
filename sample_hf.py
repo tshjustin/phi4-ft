@@ -22,7 +22,7 @@ def check_split(dataset_id):
 # check_split("MERaLiON/Multitask-National-Speech-Corpus-v1")
 
 dataset_id = "MERaLiON/Multitask-National-Speech-Corpus-v1"
-base_path = "/workspace/jtan/Phi-4-multimodal-instruct/meralion_data"
+base_path = "./meralion_data"
 sample_size = 5000
 seed = 42
 

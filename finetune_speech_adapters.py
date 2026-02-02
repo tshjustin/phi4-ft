@@ -1,15 +1,6 @@
 """
 This finetuning script only finetunes the LoRA adapters for speech tasks using the Meralion dataset 
 
-
-The test sets used is from the Meralion test split 
-
-1. trains all tasks OR trains QA tasks only
-
-
-2. Evaluates both the base model and finetuned model on the same sets of tasks 
-
-3. For all_tasks, the tasks are shuffled, which could be undesirable 
 """
 
 import json
@@ -64,6 +55,21 @@ class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
 
 class MeralionDataset(Dataset):
     def __init__(self, processor, data_dir, split, task_types, rank=0, world_size=1):
+        """
+
+        loads dataset, the expected structure follows the https://huggingface.co/datasets/MERaLiON/Multitask-National-Speech-Corpus-v1 format 
+
+        meralion_data/
+            ├── train/
+            │   ├── ASR_dataset1/
+            │   ├── ASR_dataset2/
+            │   ├── SQA_dataset1/
+            │   └── PQA_dataset1/
+            └── test/
+                ├── ASR_test/
+                └── SQA_test/
+                ...
+        """
         self.processor = processor
         self.training = split == "train"
         self.task_types = task_types if isinstance(task_types, list) else [task_types]
@@ -95,8 +101,14 @@ class MeralionDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
+        # {
+        #   'instruction': '...',
+        #   'context': {'bytes': b'\x00\x01\x02...'},
+        #   'answer': '...'
+        # }
         data = self.data[idx]
         
+        # sets the chat template -> "<|system|>...<|user|><|audio_1|>\nINSSTRUCTION<|end|><|assistant|>"
         user_message = {
             'role': 'user',
             'content': '<|audio_1|>\n' + data['instruction'],
@@ -105,9 +117,10 @@ class MeralionDataset(Dataset):
             [user_message], tokenize=False, add_generation_prompt=True
         )
         
-        audio_bytes = data['context']['bytes']
-        audio_array, sampling_rate = sf.read(io.BytesIO(audio_bytes))
+        audio_bytes = data['context']['bytes'] # raw audio file bytes
+        audio_array, sampling_rate = sf.read(io.BytesIO(audio_bytes)) # bytes -> numpy array of audio samples + sample rate (16000 Hz)
         
+        # tokenzation of audio + ans 
         inputs = self.processor(
             text=prompt, 
             audios=[(audio_array, sampling_rate)], 
@@ -227,6 +240,29 @@ def create_model(model_name_or_path, speech_lora_path, use_flash_attention=False
 
 
 def compute_metrics(predictions, references, task_type):
+    """ 
+    Compute eval metrics based on the task type
+
+    {
+        "ASR": {
+            "description": "Automatic Speech Recognition",
+            "metrics": ["bleu", "wer", "cer"]
+        },
+        "SQA": {
+            "description": "Spoken Question Answering",
+            "metrics": ["bleu", "exact_match"]
+        },
+        "PQA": {
+            "description": "Question Answering",
+            "metrics": ["bleu", "exact_match"]
+        },
+        "SDS": {
+            "description": "Spoken Dialogue Summarization",
+            "metrics": ["bleu", "rouge1", "rouge2", "rougeL"]
+        }
+    }
+
+    """
     metrics = {}
     
     bleu = sacrebleu.corpus_bleu(predictions, [references])
@@ -333,6 +369,9 @@ def evaluate(model, processor, eval_dataset, task_name, save_path=None, disable_
 
 
 class EvaluationCallback(TrainerCallback):
+    """
+    for wandb logging 
+    """
     def __init__(self, processor, eval_datasets, eval_batch_size, disable_tqdm, output_dir, eval_steps=300):
         self.processor = processor
         self.eval_datasets = eval_datasets
@@ -473,10 +512,8 @@ def main():
     out_path = Path(training_args.output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    print("\n" + "="*60)
-    print("BASELINE EVALUATION (Before Fine-tuning)")
-    print("="*60)
-    
+    print("baseline eval \n\n")
+
     for task_type, eval_ds in eval_datasets.items():
         metrics = evaluate(
             model,
@@ -491,9 +528,7 @@ def main():
             before_metrics = {f'{task_type}/{metric_name}_before': value for metric_name, value in metrics.items()}
             wandb.log(before_metrics)
 
-    print("\n" + "="*60)
-    print("STARTING TRAINING")
-    print("="*60)
+    print("training \n\n")
 
     eval_callback = EvaluationCallback(
         processor=processor,
@@ -529,9 +564,7 @@ def main():
         use_flash_attention=config['model']['use_flash_attention']
     )
 
-    print("\n" + "="*60)
-    print("FINAL EVALUATION (After Fine-tuning)")
-    print("="*60)
+    print("final eval \n\n")
 
     for task_type, eval_ds in eval_datasets.items():
         metrics = evaluate(
@@ -548,10 +581,6 @@ def main():
             wandb.log(after_metrics)
 
     if accelerator.is_main_process:
-        print("\n" + "="*60)
-        print("TRAINING SUMMARY")
-        print("="*60)
-        
         for task_type in config['data']['task_types']:
             print(f"\n{task_type}:")
             

@@ -16,14 +16,14 @@ for task in "${TASKS[@]}"; do
   TASKS_YAML="${TASKS_YAML}    - ${task}\n"
 done
 
-source Phi-4-multimodal-instruct/.venv/bin/activate
+source Phi-4-multimodal-instruct/.venv/bin/activate # ensure its the correct path to the env 
 
 CONFIG_FILE="config_lr${LR_CLEAN}-ep${EPOCHS}-bs${BATCH_SIZE}-wd${WD_CLEAN}_warmup${WARMUP_STEPS}_${MODEL}.yaml"
 
 cat > ${CONFIG_FILE} << EOF
 model:
   name_or_path: "microsoft/Phi-4-multimodal-instruct"
-  speech_lora_path: "./Phi-4-multimodal-instruct/speech-lora"
+  speech_lora_path: "./Phi-4-multimodal-instruct/speech-lora" 
   use_flash_attention: true
 
 data:
