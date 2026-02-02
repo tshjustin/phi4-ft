@@ -1,0 +1,28 @@
+model:
+  name_or_path: "microsoft/Phi-4-multimodal-instruct"
+  speech_lora_path: "/workspace/jtan/Phi-4-multimodal-instruct/speech-lora"
+  use_flash_attention: true
+
+data:
+  data_dir: "/workspace/jtan/Phi-4-multimodal-instruct/meralion_data"
+  task_types:
+    - ASR
+    - SQA
+    - SDS
+    - PQA
+
+training:
+  output_dir: "./outputs/phi4_lr0_0004_ep3_bs128_wd0_01_warmup300_speech_lora"
+  batch_size: 128
+  batch_size_per_gpu: 16
+  num_epochs: 3
+  learning_rate: 0.0004
+  weight_decay: 0.01
+  warmup_steps: 300
+  logging_steps: 10
+  enable_tqdm: true
+
+wandb:
+  entity: "j-tann2305-nanyang-technological-university-singapore"
+  project: "meralion-audio"
+  run_name: "phi4-lr0_0004-ep3-bs128-wd0_01_warmup300_speech_lora"

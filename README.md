@@ -1,0 +1,1 @@
+accelerate launch --num_processes=4 finetune.py config_all_tasks.yaml
