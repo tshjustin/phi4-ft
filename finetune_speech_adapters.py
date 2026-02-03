@@ -1,13 +1,9 @@
-"""
-This finetuning script only finetunes the LoRA adapters for speech tasks using the Meralion dataset 
-
-"""
-
+from datetime import timedelta
+import torch.distributed as dist
 import json
 import os
 from pathlib import Path
 import yaml
-
 import torch
 import sacrebleu
 import wandb
@@ -29,7 +25,6 @@ from transformers import (
 from rouge_score import rouge_scorer
 from sklearn.metrics import accuracy_score
 import editdistance
-
 import io
 import soundfile as sf
 from peft import PeftModel
@@ -55,21 +50,6 @@ class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
 
 class MeralionDataset(Dataset):
     def __init__(self, processor, data_dir, split, task_types, rank=0, world_size=1):
-        """
-
-        loads dataset, the expected structure follows the https://huggingface.co/datasets/MERaLiON/Multitask-National-Speech-Corpus-v1 format 
-
-        meralion_data/
-            ├── train/
-            │   ├── ASR_dataset1/
-            │   ├── ASR_dataset2/
-            │   ├── SQA_dataset1/
-            │   └── PQA_dataset1/
-            └── test/
-                ├── ASR_test/
-                └── SQA_test/
-                ...
-        """
         self.processor = processor
         self.training = split == "train"
         self.task_types = task_types if isinstance(task_types, list) else [task_types]
@@ -101,14 +81,8 @@ class MeralionDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        # {
-        #   'instruction': '...',
-        #   'context': {'bytes': b'\x00\x01\x02...'},
-        #   'answer': '...'
-        # }
         data = self.data[idx]
         
-        # sets the chat template -> "<|system|>...<|user|><|audio_1|>\nINSSTRUCTION<|end|><|assistant|>"
         user_message = {
             'role': 'user',
             'content': '<|audio_1|>\n' + data['instruction'],
@@ -117,10 +91,9 @@ class MeralionDataset(Dataset):
             [user_message], tokenize=False, add_generation_prompt=True
         )
         
-        audio_bytes = data['context']['bytes'] # raw audio file bytes
-        audio_array, sampling_rate = sf.read(io.BytesIO(audio_bytes)) # bytes -> numpy array of audio samples + sample rate (16000 Hz)
+        audio_bytes = data['context']['bytes']
+        audio_array, sampling_rate = sf.read(io.BytesIO(audio_bytes))
         
-        # tokenzation of audio + ans 
         inputs = self.processor(
             text=prompt, 
             audios=[(audio_array, sampling_rate)], 
@@ -240,29 +213,6 @@ def create_model(model_name_or_path, speech_lora_path, use_flash_attention=False
 
 
 def compute_metrics(predictions, references, task_type):
-    """ 
-    Compute eval metrics based on the task type
-
-    {
-        "ASR": {
-            "description": "Automatic Speech Recognition",
-            "metrics": ["bleu", "wer", "cer"]
-        },
-        "SQA": {
-            "description": "Spoken Question Answering",
-            "metrics": ["bleu", "exact_match"]
-        },
-        "PQA": {
-            "description": "Question Answering",
-            "metrics": ["bleu", "exact_match"]
-        },
-        "SDS": {
-            "description": "Spoken Dialogue Summarization",
-            "metrics": ["bleu", "rouge1", "rouge2", "rougeL"]
-        }
-    }
-
-    """
     metrics = {}
     
     bleu = sacrebleu.corpus_bleu(predictions, [references])
@@ -369,9 +319,6 @@ def evaluate(model, processor, eval_dataset, task_name, save_path=None, disable_
 
 
 class EvaluationCallback(TrainerCallback):
-    """
-    for wandb logging 
-    """
     def __init__(self, processor, eval_datasets, eval_batch_size, disable_tqdm, output_dir, eval_steps=300):
         self.processor = processor
         self.eval_datasets = eval_datasets
@@ -418,6 +365,9 @@ def main():
     config_path = sys.argv[2] if sys.argv[1] == '--config' else sys.argv[1]
     config = load_config(config_path)
     
+    if os.environ.get("WORLD_SIZE", None):
+        dist.init_process_group(backend="nccl", timeout=timedelta(minutes=30))
+
     accelerator = Accelerator()
 
     run_name = config['wandb']['run_name']
@@ -512,7 +462,7 @@ def main():
     out_path = Path(training_args.output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    print("baseline eval \n\n")
+    print("baseline eval")
 
     for task_type, eval_ds in eval_datasets.items():
         metrics = evaluate(
@@ -527,8 +477,6 @@ def main():
         if accelerator.is_main_process and metrics is not None:
             before_metrics = {f'{task_type}/{metric_name}_before': value for metric_name, value in metrics.items()}
             wandb.log(before_metrics)
-
-    print("training \n\n")
 
     eval_callback = EvaluationCallback(
         processor=processor,
@@ -564,7 +512,7 @@ def main():
         use_flash_attention=config['model']['use_flash_attention']
     )
 
-    print("final eval \n\n")
+    print("final eval")
 
     for task_type, eval_ds in eval_datasets.items():
         metrics = evaluate(
@@ -581,6 +529,7 @@ def main():
             wandb.log(after_metrics)
 
     if accelerator.is_main_process:
+        
         for task_type in config['data']['task_types']:
             print(f"\n{task_type}:")
             
