@@ -1,5 +1,3 @@
-accelerate launch --num_processes=4 finetune.py config_all_tasks.yaml
-
 ## Setting Up
 
 ```
@@ -26,7 +24,7 @@ uv run sample_hf.py
 
 The script to train the speech adapter is `finetune_speech_adapters.py`. Its a modified version of https://huggingface.co/microsoft/Phi-4-multimodal-instruct/blob/main/sample_finetune_speech.py
 
-For ease of experimenting, the configs are created using a bash script as the entry point.\
+For ease of experimenting, the configs are created using a bash script as the entry point.
  
 ```
 ./config.sh 
@@ -40,3 +38,13 @@ For ease of experimenting, the configs are created using a bash script as the en
 3. Ensure that `entity` in `wandb` field in the config.sh is set to your own entity. 
 
 4. This repository is a fork of (https://huggingface.co/microsoft/Phi-4-multimodal-instruct/tree/main), hence ensure that all the models / adapters are pulled correctly. Alternative, can just copy over `./config.sh`, `finetune_speech_adapters.py` and `sample_hf.py` to the Phi-4-multimodal-instruct repo 
+
+
+## Experimentation Notes 
+The dataset consists of 4 tasks [ASR, SDS, PQA, SQA]. 
+
+The finetuning code `finetune_speech_adapters.py` finetunes the speech-lora adapters. The script also finetunes the model on all 4 tasks at once.
+
+Some considerations to consider: 
+1. Shuffling the tasks to improve learning 
+2. Checking baseline capabilities such as normal ASR to prevent catastrophic forgetting 
