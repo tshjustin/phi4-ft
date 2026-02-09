@@ -32,6 +32,7 @@ from peft import PeftModel
 ANSWER_SUFFIX = "<|end|><|endoftext|>"
 _IGNORE_INDEX = -100
 
+EVAL_STEPS = 1500
 
 class MultipleTokenBatchStoppingCriteria(StoppingCriteria):
     def __init__(self, stop_tokens: torch.LongTensor, batch_size: int = 1) -> None:
@@ -201,6 +202,13 @@ def create_model(model_name_or_path, speech_lora_path, use_flash_attention=False
         trust_remote_code=True,
     ).to('cuda')
     
+    adapter_path = Path(speech_lora_path)
+    if not (adapter_path / 'adapter_config.json').exists():
+        if (adapter_path / 'speech' / 'adapter_config.json').exists():
+            speech_lora_path = str(adapter_path / 'speech')
+        else:
+            raise ValueError(f"Cannot find adapter_config.json in {speech_lora_path} or {speech_lora_path}/speech")
+
     model = PeftModel.from_pretrained(
         model,
         speech_lora_path,
@@ -244,7 +252,7 @@ def compute_metrics(predictions, references, task_type):
 
 
 @torch.no_grad()
-def evaluate(model, processor, eval_dataset, task_name, save_path=None, disable_tqdm=False, eval_batch_size=1):
+def evaluate(model, processor, eval_dataset, task_name, save_path=None, disable_tqdm=False, eval_batch_size=64):
     rank = int(os.environ.get('RANK', 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
@@ -319,7 +327,7 @@ def evaluate(model, processor, eval_dataset, task_name, save_path=None, disable_
 
 
 class EvaluationCallback(TrainerCallback):
-    def __init__(self, processor, eval_datasets, eval_batch_size, disable_tqdm, output_dir, eval_steps=300):
+    def __init__(self, processor, eval_datasets, eval_batch_size, disable_tqdm, output_dir, eval_steps=EVAL_STEPS):
         self.processor = processor
         self.eval_datasets = eval_datasets
         self.eval_batch_size = eval_batch_size
@@ -484,7 +492,7 @@ def main():
         eval_batch_size=config['training']['batch_size_per_gpu'],
         disable_tqdm=not config['training']['enable_tqdm'],
         output_dir=training_args.output_dir,
-        eval_steps=300
+        eval_steps=EVAL_STEPS
     )
 
     trainer = Trainer(
